@@ -1,0 +1,142 @@
+using UnityEngine;
+using System.Threading;
+using Unity.VisualScripting;
+using System.Collections.Generic;
+using UnityEngine.InputSystem;
+using System.IO;
+public class FlightThreadNoSinc : MonoBehaviour
+{
+    //Variables de clase
+    public float speed = 50f;
+    public float rotationSpeed = 100F;
+    public Transform CameraTransform;
+    public Vector2 movementInput;
+
+    //Control de iteraciones
+    public int turbulenceIterations = 1000000;
+    //Lista de vectores de posición calculados
+    private List<Vector3> turbulenceForces = new List<Vector3>();
+
+    //Variables para manipular el hilo secundario
+    private Thread turbulenceThread;
+    private bool isTurbulenceRunning = false;
+    private bool stopTurbulenceThread = false;
+    private float captureTime;
+
+    //banderas de control sobre lectura
+    public bool read = false;
+    string filepath;
+    
+    //Metodo para leer la entrada del teclado
+
+    public void OnMovement(InputValue value)
+    {
+        movementInput = value.Get<Vector2>();
+
+    }
+    //Método para leer 
+    // Start is called once before the first execution of Update after the MonoBehaviour is created
+    void Start()
+    {
+        filepath = Application.dataPath + "/TurbulnceData.txt";
+        Debug.Log("Ruta al archivo:" + filepath);
+    }
+
+    // Update is called once per frame
+    void Update()
+    {
+        if (CameraTransform == null)
+        {
+            Debug.LogError("No hay camara asignada");
+            return;
+        }
+
+
+
+        //Tiempo transcurrido
+        captureTime = Time.time;
+        //Proceso de consumo de recursos
+
+        if (!isTurbulenceRunning)
+        {
+            isTurbulenceRunning = true;
+            stopTurbulenceThread = false;
+            turbulenceThread = new Thread(() => SimulateTurbulence(captureTime));
+
+
+        }
+
+
+
+
+        //Mover la nave linealmente
+        Vector3 moveDirection = CameraTransform.forward * movementInput.y * speed * Time.deltaTime;
+        this.transform.position += moveDirection;
+
+        //Mover la nave en rotación
+        float yaw = movementInput.x * rotationSpeed * Time.deltaTime;
+        this.transform.Rotate(0, yaw, 0);
+
+    }
+
+    public void SimulateTurbulence(float time)
+    {
+        turbulenceForces.Clear();
+
+        //Repeticiones
+        for (int i = 0; i < turbulenceIterations; i++)
+        {
+            //Verificar si debo detener el hilo
+            if (stopTurbulenceThread)
+            { break; }
+            Vector3 force = new Vector3
+            (
+                Mathf.PerlinNoise(i * 0.001f, Time.time) * 2 - 1,
+                Mathf.PerlinNoise(i * 0.002f, Time.time) * 2 - 1,
+                Mathf.PerlinNoise(i * 0.003f, Time.time) * 2 - 1
+            );
+
+            turbulenceForces.Add(force);
+        }
+        //Escritura del archivo
+        using (StreamWriter writer = new StreamWriter(filepath, false))
+        {
+            foreach (var force in turbulenceForces)
+            {
+                writer.WriteLine(force.ToString());
+            }
+            writer.Flush();
+        }
+        //Seññal consola de inicio de hilo
+        Debug.Log("Iniciando simulaciones de turbulencia");
+       
+            //Simulación completada
+            isTurbulenceRunning = false;
+    }
+
+    public void TryReadFile()
+    {
+        try
+        {
+            string content = File.ReadAllText(filepath);
+            Debug.Log("Archivo leido:"+content);
+        }
+        catch(IOException ex)
+        {
+            Debug.LogError("Error en acceso al archivo:" + ex.Message);
+        }
+    }
+
+    private void OnDestroy()
+    {
+        //Iniciar el cierre del hilo
+        stopTurbulenceThread = true;
+        //Verificar si el hilo existe y se esta ejecutando
+        if (turbulenceThread != null && turbulenceThread.IsAlive)
+        {
+            //Unir al hilo principal y cerrar ejecución
+            turbulenceThread.Join();
+        }
+    }
+}
+
